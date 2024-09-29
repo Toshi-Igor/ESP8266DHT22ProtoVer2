@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Sensor Data Visualizer</title>
+  <style>
+    .chart-container {
+      width: 90%;
+      margin: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+  <!-- Include Chart.js and the Moment.js adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/moment@2.29.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>
+</head>
+<body>
+  <h1>Real-Time DHT22 Sensor Data</h1>
+
+  <div class="chart-container">
+    <canvas id="temperatureChart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="humidityChart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="heatIndexChart"></canvas>
+  </div>
+
+  <h2>Historical Data (Latest 100 Entries)</h2>
+  <table id="history-table">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Temperature (°C)</th>
+        <th>Humidity (%)</th>
+        <th>Heat Index (°C)</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+
+  <script>
+    // Initialize chart.js chart configurations
+    const ctxTemperature = document.getElementById('temperatureChart').getContext('2d');
+    const ctxHumidity = document.getElementById('humidityChart').getContext('2d');
+    const ctxHeatIndex = document.getElementById('heatIndexChart').getContext('2d');
+
+    const temperatureChart = new Chart(ctxTemperature, {
+      type: 'line',
+      data: {
+        labels: [], // Empty array initially; we'll populate with timestamps
+        datasets: [{
+          label: 'Temperature (°C)',
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          data: [] // Empty data array for temperature readings
+        }]
+      },
+      options: {
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'minute'
+            }
+          },
+          y: {
+            beginAtZero: false
+          }
+        }
+      }
+    });
+
+    const humidityChart = new Chart(ctxHumidity, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Humidity (%)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          data: []
+        }]
+      },
+      options: {
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'minute'
+            }
+          },
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+
+    const heatIndexChart = new Chart(ctxHeatIndex, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Heat Index (°C)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          data: []
+        }]
+      },
+      options: {
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'minute'
+            }
+          },
+          y: {
+            beginAtZero: false
+          }
+        }
+      }
+    });
+
+    // WebSocket for real-time data
+    const ws = new WebSocket('ws://localhost:8080');
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      // Append new data to the charts
+      const timestamp = new Date(data.timestamp);
+      
+      // Update temperature chart
+      temperatureChart.data.labels.push(timestamp);
+      temperatureChart.data.datasets[0].data.push(data.temperature);
+      temperatureChart.update();
+
+      // Update humidity chart
+      humidityChart.data.labels.push(timestamp);
+      humidityChart.data.datasets[0].data.push(data.humidity);
+      humidityChart.update();
+
+      // Update heat index chart
+      heatIndexChart.data.labels.push(timestamp);
+      heatIndexChart.data.datasets[0].data.push(data.heat_index);
+      heatIndexChart.update();
+
+      // Append new data to the historical table
+      const tableBody = document.querySelector('#history-table tbody');
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${timestamp.toLocaleString()}</td>
+        <td>${data.temperature}</td>
+        <td>${data.humidity}</td>
+        <td>${data.heat_index}</td>
+      `;
+      tableBody.prepend(row);
+    };
+
+    // Fetch historical data when the page loads
+    window.onload = function() {
+      fetch('/history')
+        .then(response => response.json())
+        .then(data => {
+          const tableBody = document.querySelector('#history-table tbody');
+          tableBody.innerHTML = ''; // Clear previous data
+          data.forEach(entry => {
+            const timestamp = new Date(entry.timestamp);
+
+            // Add historical data to the charts
+            temperatureChart.data.labels.push(timestamp);
+            temperatureChart.data.datasets[0].data.push(entry.temperature);
+
+            humidityChart.data.labels.push(timestamp);
+            humidityChart.data.datasets[0].data.push(entry.humidity);
+
+            heatIndexChart.data.labels.push(timestamp);
+            heatIndexChart.data.datasets[0].data.push(entry.heat_index);
+
+            // Append historical data to the table
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${timestamp.toLocaleString()}</td>
+              <td>${entry.temperature}</td>
+              <td>${entry.humidity}</td>
+              <td>${entry.heat_index}</td>
+            `;
+            tableBody.appendChild(row);
+          });
+
+          // Update the charts with historical data
+          temperatureChart.update();
+          humidityChart.update();
+          heatIndexChart.update();
+        })
+        .catch(error => {
+          console.error('Error fetching historical data:', error);
+        });
+    };
+  </script>
+</body>
+</html>
